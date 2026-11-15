@@ -17,16 +17,19 @@ def outliers(col_name : str):
     outliers = df[(df[col_name]>up) | (df[col_name]<lo)]
     return len(outliers)
 
+#LOADING
 df = pd.read_csv('movie_metadata.csv')
 
 print("raw shape:", df.shape)
 #since there are no null  entries, now we drop
 df = df.drop(columns=['movie_imdb_link'])
 
-df.drop_duplicates(inplace=True)
+df.drop_duplicates(subset=["movie_title", "title_year"], inplace=True)
 print(df.shape)
 
-cat_cols = df.select_dtypes(exclude='number').columns
+
+#CATEGORICAL COLUMNS
+
 
 # cat cols = ['color', 'director_name', 'actor_2_name', 'genres', 'actor_1_name',
 #        'movie_title', 'actor_3_name', 'plot_keywords', 'language', 'country',
@@ -34,7 +37,7 @@ cat_cols = df.select_dtypes(exclude='number').columns
 
 # dealing with cat cols first cuz i love cats---(me too ifykyk)
 
-df[cat_cols].isnull().sum()
+#df[cat_cols].isnull().sum()
 # cols with null vals 
       
 #df['color'] = df['color'].fillna(df['color'].mode()[0]) 
@@ -72,8 +75,21 @@ df["content_rating"] = df["content_rating"].replace({
 
 df['content_rating'] = df['content_rating'].fillna('Unrated') 
 
+cat_cols = df.select_dtypes(exclude='number').columns
+for col in cat_cols:
+    print(col,': ',df[col].unique())
+
+# plot_keywords need std rest r fine 
+df['plot_keywords'] = df['plot_keywords'].str.strip().str.title()
+
+# Std done 
+
 #dealt with cats now will go for nums
 #305 rows dropped upto here
+
+# ==============================================================================
+# 3. NUMERICAL COLUMNS
+# ==============================================================================
 
 num_cols = df.select_dtypes(include='number').columns
 
@@ -89,6 +105,7 @@ num_cols = df.select_dtypes(include='number').columns
 #apply KN inputation on it with GROSS not being one of the neigbours
 #BUT BEFORE THAT LETS FIX THE SKEW
 
+# --- 3a. target (gross) + budget (local currency fix, KNN imputation)
 df.dropna(subset=['gross'],inplace=True)
 
 # budget in local currency (yen, won, rupee..) while gross is in usd
@@ -115,17 +132,10 @@ Z = KNNImputer(n_neighbors=7, weights="uniform").fit_transform(Z)
 imp = pd.DataFrame(pt.inverse_transform(Z), columns=knn_cols, index=df.index)
 df["budget"] = df["budget"].fillna(imp["budget"].clip(lower=df["budget"].min())).round()  # observed stay as is
 
-                  
+
 
 # now imputing median safest opn + no big nan vals
 df['num_critic_for_reviews'] = round(imputing_med('num_critic_for_reviews'),0)
-
-# impossible values missing, then filled like the rest
-short = df["duration"] < 30
-print("durations under 30 min:", short.sum())
-df.loc[short, "duration"] = np.nan
-
-#now impute
 df['duration'] = imputing_med('duration')
 df['num_user_for_reviews'] = round(imputing_med('num_user_for_reviews'),2)
 
@@ -150,7 +160,7 @@ df['facenumber_in_poster'] = df['facenumber_in_poster'].fillna(df['facenumber_in
 # poster face counts go up to 43,Lets Winsorize at 10
 df["facenumber_in_poster"] = df["facenumber_in_poster"].clip(upper=10)
 
-
+# aspect ratio
 # dk how to deal with aspect ratio btw country got treated automatically 
 # just 60 null vals of aspect raio r left to deal with-deaing with them
 
@@ -161,20 +171,17 @@ df["aspect_ratio"] = df["aspect_ratio"].fillna(df["aspect_ratio"].mode()[0])
 
 # DUP + NULL VALS HANDLED
 
-cat_cols = df.select_dtypes(exclude='number').columns
-for col in cat_cols:
-    print(col,': ',df[col].unique())
 
-# plot_keywords need std rest r fine 
-df['plot_keywords'] = df['plot_keywords'].str.strip().str.title()
 
-# Std done 
+
 # OUTLIERS now 
 
 bud_out = outliers('budget') #276 out in bud
 for col in num_cols:
     print('outliers in ',col,': ',outliers(col))
 
+
+# 5. EXTRA FEATURES
 
 # extra features
 INFLATION = 0.018 # # same flat rate the tmdb notebook used--this is to standardize
@@ -188,9 +195,8 @@ df["title_words"] = df["movie_title"].str.split().str.len()
 df["num_keywords"] = (df["plot_keywords"].where(df["plot_keywords"] != "Unknown")
                       .str.count(r"\|").add(1).fillna(0).astype(int))
 
-print("\nfinal shape:", df.shape)
-df.to_csv("Clean.csv", index=False)
 
+df.to_csv("Clean.csv", index=False)
 
 ''' 
 outliers in  num_critic_for_reviews :  149
@@ -210,4 +216,4 @@ outliers in  imdb_score :  90
 outliers in  aspect_ratio :  1
 outliers in  movie_facebook_likes :  402
 '''
-# done with data cleaning 
+# done with data cleaning

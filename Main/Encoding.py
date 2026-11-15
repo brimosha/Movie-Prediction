@@ -28,10 +28,6 @@ df["has_movie_fb"] = (df["movie_facebook_likes"] > 0).astype(int)
 df["country_group"] = df["country"].where(df["country"].map(df["country"].value_counts()) >= 50, "Other")
 
 
-# ---------------------------------------------------------------------------
-# extra features that never look at gross (safe to build before the split)
-# ---------------------------------------------------------------------------
-
 # ---- age rating: ordinal "how adult" scale + pooled one-hot -----------------
 rating_scale = {"G": 0, "TV-G": 0, "TV-Y": 0, "TV-Y7": 0,
                 "Approved": 1, "Passed": 1, "GP": 1, "PG": 1, "TV-PG": 1,

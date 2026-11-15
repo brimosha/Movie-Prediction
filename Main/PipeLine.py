@@ -9,20 +9,20 @@ from sklearn.metrics import (accuracy_score, f1_score, matthews_corrcoef, mean_a
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import PowerTransformer
 
-# ---------------------------------------------------------------- config
+#Intial Configuration
 FOLDS, SEED = 15, 42
-HIT = 1.5
+HIT = 3.0
 POST_RELEASE = ["num_voted_users", "num_user_for_reviews", "num_critic_for_reviews",
                 "movie_facebook_likes", "has_movie_fb", "imdb_score"]   # only known after release (also catches log_* copies)
 
-# ---------------------------------------------------------------- data
+#Reading the data and coverting to numpy array
 tr, te = pd.read_csv("train_encoded.csv"), pd.read_csv("test_encoded.csv")
 all_feats = [c for c in tr.columns if c not in ["gross", "gross_yj"]]
 ytr, yte = tr["gross"].to_numpy(float), te["gross"].to_numpy(float)
 btr, bte = tr["budget"].to_numpy(float), te["budget"].to_numpy(float)
 
-lo, hi = np.percentile(ytr / btr, [5, 95])             # F-factor = gross / budget, outlier band from TRAIN only
-yj = PowerTransformer().fit(ytr.reshape(-1, 1))        # only used to report metrics on the Yeo-Johnson scale
+lo, hi = np.percentile(ytr / btr, [5, 95]) #F-factor = gross / budget, outlier band from TRAIN only
+yj = PowerTransformer().fit(ytr.reshape(-1, 1)) #only used to report metrics on the Yeo-Johnson scale
 strat = pd.qcut(np.log(ytr), 10, labels=False)
 
 model = TransformedTargetRegressor(
@@ -31,12 +31,12 @@ model = TransformedTargetRegressor(
                                             early_stopping=False, random_state=SEED),
     transformer=PowerTransformer(method="yeo-johnson", standardize=True))
 
-# ---------------------------------------------------------------- pre-release vs post-release
+#Defining functions for printing statistics for pre and post without doing it seperately
 summary = {}
 for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
     feats = [c for c in all_feats if not any(s in c for s in banned)]
     Xtr, Xte = tr[feats], te[feats]
-    print(f"\n{label} model: {len(feats)} features")
+    print("\n" + label + " model: " + str(len(feats)) + " features")
 
     # k-fold CV on train: out-of-fold predictions + train vs validation R2 per fold
     oof, r2_train, r2_val = np.zeros(len(ytr)), [], []
@@ -45,17 +45,20 @@ for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
         oof[va_i] = m.predict(Xtr.iloc[va_i])
         r2_train.append(r2_score(ytr[tr_i], m.predict(Xtr.iloc[tr_i])))
         r2_val.append(r2_score(ytr[va_i], oof[va_i]))
-    print(f"CV R2 (gross $), mean over {FOLDS} folds: train {np.mean(r2_train):.3f} | "
-          f"validation {np.mean(r2_val):.3f} +/- {np.std(r2_val):.3f}")
+    print("CV R2 (gross $), mean over " + str(FOLDS) + " folds: train " +
+          "{:.3f}".format(np.mean(r2_train)) + " | validation " +
+          "{:.3f}".format(np.mean(r2_val)) + " +/- " + "{:.3f}".format(np.std(r2_val)))
 
     # final model on all of train -> test
     pte = clone(model).fit(Xtr, ytr).predict(Xte)
 
+
+#Defining maual classifier
     for name, X, y, b, p in [("CV", Xtr, ytr, btr, oof), ("TEST", Xte, yte, bte, pte)]:
-        p = np.maximum(p, 1.0)                                  # dollars; avoids log of <= 0
-        r, rp = y / b, p / b                                    # true / predicted F-factor
+        p = np.maximum(p, 1.0)  #dollars; avoids log of <= 0
+        r, rp = y / b, p / b    #true/predicted F-factor
         err, ferr = p - y, rp - r
-        out = (r < lo) | (r > hi)                               # true F-factor outside the train 5/95 band
+        out = (r < lo) | (r > hi) #true F-factor outside the train 5/95 band
         z, zp = yj.transform(y.reshape(-1, 1)).ravel(), yj.transform(p.reshape(-1, 1)).ravel()
         th, ph = r > HIT, rp > HIT
 
@@ -80,7 +83,7 @@ for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
             "Hit accuracy": accuracy_score(th, ph),
             "Hit MCC": matthews_corrcoef(th, ph),
         }
-
+        #for TEST part however i'll also have to plot the curves
         if name == "TEST":
             lim = [min(y.min(), p.min()) / 1e6, max(y.max(), p.max()) / 1e6]
             plt.figure(figsize=(7, 6))
@@ -88,12 +91,12 @@ for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
             plt.plot(lim, lim, "k--")                           # perfect-prediction line
             plt.xscale("log")
             plt.yscale("log")
-            plt.title(f"{label} HistGB: actual vs predicted gross (TEST)")
+            plt.title(label + " HistGB: actual vs predicted gross (TEST)")
             plt.xlabel("Actual gross (Millions USD, log scale)")
             plt.ylabel("Predicted gross (Millions USD, log scale)")
             plt.tight_layout()
-            plt.savefig(f"{label.lower()}_test_scatter.png", dpi=150)
+            plt.savefig(label.lower() + "_test_scatter.png", dpi=150)
             plt.close()
 
 print("\nSUMMARY")
-print(pd.DataFrame(summary).to_string(float_format=lambda v: f"{v:,.3f}"))
+print(pd.DataFrame(summary).to_string(float_format=lambda v: "{:,.3f}".format(v)))

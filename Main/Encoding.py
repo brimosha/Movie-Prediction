@@ -4,31 +4,34 @@ import pandas as pd
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.preprocessing import PowerTransformer, MultiLabelBinarizer
 
-CSV_PATH = "Clean.csv"
-MIN_FILMS = 5   # an actor / director needs this many films in the training data to count as a "star"
-KW_MIN = 25     # a plot keyword needs this many films to get its own column
+MIN_FILMS = 5 #an actor / director needs this many films in the training data to count as a "star"
+KW_MIN = 25  #a plot keyword needs this many films to get its own column
 FR_MIN = 3      # a franchise needs this many films to get its own column
 SEED = 42
 
-df = pd.read_csv(CSV_PATH)
+df = pd.read_csv("Clean.csv")
 
 # genres: multi-hot, rare ones dropped (still counted in num_genres)
-g = df["genres"].str.get_dummies("|")
+g = df["genres"].str.get_dummies()
 g.columns = "genre_" + g.columns.str.replace("-", "_")
 rare = g.columns[g.sum() < 30]
 print("dropped rare genres:", list(rare))
+
 df["num_genres"] = df["genres"].str.count(r"\|") + 1
 df = pd.concat([df.drop(columns="genres"), g.drop(columns=rare)], axis=1)
 
+
 df["is_english"] = (df["language"] == "English").astype(int)
 df["is_usa"] = (df["country"] == "USA").astype(int)
+
 # 0 likes on a film page mostly means no page existed, not that nobody liked it
 df["has_movie_fb"] = (df["movie_facebook_likes"] > 0).astype(int)
+
 # rare countries pooled
 df["country_group"] = df["country"].where(df["country"].map(df["country"].value_counts()) >= 50, "Other")
 
 
-# ---- age rating: ordinal "how adult" scale + pooled one-hot -----------------
+# Age rating: ordinal "how adult" scale + pooled one-hot
 rating_scale = {"G": 0, "TV-G": 0, "TV-Y": 0, "TV-Y7": 0,
                 "Approved": 1, "Passed": 1, "GP": 1, "PG": 1, "TV-PG": 1,
                 "PG-13": 2, "TV-14": 2,
@@ -41,7 +44,7 @@ df["is_restricted"] = (df["rating_level"] >= 3).astype(int)
 df["content_rating"] = df["content_rating"].where(
     df["content_rating"].map(df["content_rating"].value_counts()) >= 30, "Other")
 
-# ---- plot keywords: multi-hot with MultiLabelBinarizer ----------------------
+# Plot keywords: multi-hot with MultiLabelBinarizer
 def clean_kw(s):
     return re.sub(r"[^0-9a-z]+", "_", s.strip().lower()).strip("_")
 
@@ -52,7 +55,7 @@ df["num_keywords"] = kw_lists.map(len)
 mlb_kw = MultiLabelBinarizer()
 kw = pd.DataFrame(mlb_kw.fit_transform(kw_lists), columns="kw_" + pd.Index(mlb_kw.classes_), index=df.index)
 kw = kw.loc[:, kw.sum() >= KW_MIN]
-print(f"keywords kept: {kw.shape[1]} (>= {KW_MIN} films)")
+print("keywords kept: {} (>= {} films)".format(kw.shape[1], KW_MIN))
 
 # broader themes caught by substring, so rare keywords still contribute
 kw_text = df["plot_keywords"].fillna("").str.lower()
@@ -71,10 +74,10 @@ themes = {
     "theme_kids_family": r"\bkid|child|family|school|teen|friendship",
     "theme_sports": r"football|basketball|baseball|boxing|racing|sport",
 }
-theme_df = pd.DataFrame({k: kw_text.str.contains(v, regex=True).astype(int) for k, v in themes.items()},
+theme_df = pd.DataFrame({k: kw_text.str.contains(v).astype(int) for k, v in themes.items()},
                         index=df.index)
 
-# ---- franchise detection from the title -------------------------------------
+# Franchise detection from the title
 title = df["movie_title"].fillna("").astype(str).str.strip().str.lower()
 
 def base_title(t):
@@ -122,22 +125,22 @@ for t, af in zip(title, auto_franchise):
 mlb_fr = MultiLabelBinarizer()
 fr = pd.DataFrame(mlb_fr.fit_transform(fr_lists), columns="fr_" + pd.Index(mlb_fr.classes_), index=df.index)
 fr = fr.loc[:, fr.sum() >= FR_MIN]
-print(f"franchise columns kept: {fr.shape[1]} (>= {FR_MIN} films)")
+print("franchise columns kept: {} (>= {} films)".format(fr.shape[1], FR_MIN))
 
 df["franchise_key"] = [l[0] if l else "" for l in fr_lists]
 df["is_franchise"] = (df["franchise_key"] != "").astype(int)
 df["franchise_size"] = df["franchise_key"].map(df["franchise_key"].value_counts()).where(df["is_franchise"] == 1, 0).astype(int)
-df["is_sequel"] = (title.str.contains(r"(\s\d+$|\s(ii|iii|iv|vi|vii|viii|ix)$|\bpart\b|\bchapter\b|returns|reloaded|revolutions|rises|begins)", regex=True)
+df["is_sequel"] = (title.str.contains(r"(\s\d+$|\s(ii|iii|iv|vi|vii|viii|ix)$|\bpart\b|\bchapter\b|returns|reloaded|revolutions|rises|begins)")
                    | (theme_df["theme_sequel_kw"] == 1)).astype(int)
 
-# ---- title text features -----------------------------------------------------
+# Title text features
 df["title_len"] = title.str.len()
 df["title_words"] = title.str.split().str.len()
 df["title_has_colon"] = title.str.contains(":").astype(int)
 df["title_has_number"] = title.str.contains(r"\d").astype(int)
 df["title_starts_the"] = title.str.startswith("the ").astype(int)
 
-# ---- era / age of the film ---------------------------------------------------
+# Era / age of the film
 if "title_year" in df.columns:
     yr = df["title_year"].fillna(df["title_year"].median())
     df["decade"] = (yr // 10 * 10).astype(int)
@@ -145,7 +148,7 @@ if "title_year" in df.columns:
     df["is_post2000"] = (yr >= 2000).astype(int)
     df["is_post2010"] = (yr >= 2010).astype(int)
 
-# ---- simple binaries from other columns, only if present ----------------------
+# Simple binaries from other columns, only if present
 if "color" in df.columns:
     df["is_color"] = (df["color"].astype(str).str.strip().str.lower() == "color").astype(int)
 if "budget" in df.columns:
@@ -155,32 +158,30 @@ if "duration" in df.columns:
     df["is_short"] = (df["duration"] <= 90).astype(int)
 if "aspect_ratio" in df.columns:
     df["is_widescreen"] = (df["aspect_ratio"] >= 2.0).astype(int)
-if "language" in df.columns:
-    df["is_non_english_usa"] = ((df["is_english"] == 0) & (df["is_usa"] == 1)).astype(int)
-    df["is_english_foreign"] = ((df["is_english"] == 1) & (df["is_usa"] == 0)).astype(int)
+df["is_non_english_usa"] = ((df["is_english"] == 0) & (df["is_usa"] == 1)).astype(int)
+df["is_english_foreign"] = ((df["is_english"] == 1) & (df["is_usa"] == 0)).astype(int)
 
-# ---- skewed count / money columns: add log1p versions -------------------------
+# Skewed count / money columns: add log1p versions
 skewed = ["budget", "duration", "movie_facebook_likes", "director_facebook_likes",
           "actor_1_facebook_likes", "actor_2_facebook_likes", "actor_3_facebook_likes",
           "cast_total_facebook_likes", "num_voted_users", "num_critic_for_reviews",
           "num_user_for_reviews", "facenumber_in_poster"]
 for c in skewed:
     if c in df.columns:
-        df[f"log_{c}"] = np.log1p(df[c].clip(lower=0))
+        df["log_" + c] = np.log1p(df[c].clip(lower=0))
 
 df = pd.concat([df, kw, fr, theme_df], axis=1)
-
-# ---------------------------------------------------------------------------
 
 # target rows only, imputed gross is not trusted
 df = df[df["gross"].notna()].reset_index(drop=True)
 print("rows with real gross:", len(df))
 
+
 # split first, everything that looks at gross is fitted on train only
 train, test = train_test_split(df, test_size=0.2, random_state=SEED)
 train, test = train.reset_index(drop=True), test.reset_index(drop=True)
 
-pt = PowerTransformer(method="yeo-johnson")
+pt = PowerTransformer()
 train["gross_yj"] = pt.fit_transform(train[["gross"]])[:, 0]
 test["gross_yj"] = pt.transform(test[["gross"]])[:, 0]
 
@@ -199,25 +200,27 @@ def fit_stats(frame, cols, target="gross_yj"):
 def person_features(frame, stats, prior, cols, prefix):
     out = pd.DataFrame(index=frame.index)
     for i, c in enumerate(cols, 1):
-        out[f"{prefix}{i}_score"] = frame[c].map(stats).fillna(prior)   # non-stars get the global mean
-        out[f"{prefix}{i}_is_star"] = frame[c].isin(stats).astype(int)
+        out["{}{}_score".format(prefix, i)] = frame[c].map(stats).fillna(prior)   # non-stars get the global mean
+        out["{}{}_is_star".format(prefix, i)] = frame[c].isin(stats).astype(int)
     if len(cols) > 1:
-        out["cast_star_score"] = out[[f"{prefix}{i}_score" for i in range(1, len(cols) + 1)]].mean(axis=1)
-        out["cast_star_max"] = out[[f"{prefix}{i}_score" for i in range(1, len(cols) + 1)]].max(axis=1)
-        out["n_star_actors"] = out[[f"{prefix}{i}_is_star" for i in range(1, len(cols) + 1)]].sum(axis=1)
+        score_cols = ["{}{}_score".format(prefix, i) for i in range(1, len(cols) + 1)]
+        star_cols = ["{}{}_is_star".format(prefix, i) for i in range(1, len(cols) + 1)]
+        out["cast_star_score"] = out[score_cols].mean(axis=1)
+        out["cast_star_max"] = out[score_cols].max(axis=1)
+        out["n_star_actors"] = out[star_cols].sum(axis=1)
     return out
 
 
 def encode(train, test, cols, prefix):
     # train rows are scored out-of-fold so a film never sees its own gross
     oof = []
-    for tr_idx, va_idx in KFold(5, shuffle=True, random_state=SEED).split(train):
+    for tr_idx, va_idx in KFold(shuffle=True, random_state=SEED).split(train):
         stats, prior = fit_stats(train.iloc[tr_idx], cols)
         oof.append(person_features(train.iloc[va_idx], stats, prior, cols, prefix))
     train_f = pd.concat(oof).sort_index()
     stats, prior = fit_stats(train, cols)
     test_f = person_features(test, stats, prior, cols, prefix)
-    print(f"{prefix}: {len(stats)} stars in train (>= {MIN_FILMS} films)")
+    print("{}: {} stars in train (>= {} films)".format(prefix, len(stats), MIN_FILMS))
     return train_f, test_f
 
 
@@ -234,7 +237,7 @@ for frame, a, d in ((train, a_tr, d_tr), (test, a_te, d_te)):
 train = pd.concat([train, a_tr, d_tr], axis=1)
 test = pd.concat([test, a_te, d_te], axis=1)
 
-# ---- actors / directors: multi-hot (names pooled over all 3 actor slots) ----
+# Actors / directors: multi-hot (names pooled over all 3 actor slots)
 ACTOR_MIN = 8   # an actor needs this many films in train to get their own column
 DIR_MIN = 6
 
@@ -255,7 +258,7 @@ def multi_hot(train, test, lists_fn, prefix, min_films):
     cols = [prefix + re.sub(r"[^0-9a-z]+", "_", n.lower()).strip("_") for n in mlb.classes]
     tr_m = pd.DataFrame(mlb.fit_transform(tr_l), columns=cols, index=train.index)
     te_m = pd.DataFrame(mlb.transform(te_l), columns=cols, index=test.index)
-    print(f"{prefix}: {len(cols)} columns (>= {min_films} films in train)")
+    print("{}: {} columns (>= {} films in train)".format(prefix, len(cols), min_films))
     return tr_m, te_m
 
 act_tr, act_te = multi_hot(train, test, cast_lists, "act_", ACTOR_MIN)
@@ -284,16 +287,3 @@ if leftover:
 print("train:", train.shape, "| test:", test.shape)
 train.to_csv("train_encoded.csv", index=False)
 test.to_csv("test_encoded.csv", index=False)
-
-
-# quick check, do the star features add anything over the plain columns?
-from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.metrics import r2_score
-
-star_like = [c for c in train.columns
-             if c.startswith(("actor", "director", "cast_star", "n_star")) and "facebook" not in c]
-base = [c for c in train.columns if c not in star_like + ["gross", "gross_yj"]]
-
-for name, cols in [("without star features", base), ("with star features", base + star_like)]:
-    m = HistGradientBoostingRegressor(random_state=SEED).fit(train[cols], train["gross_yj"])
-    print(f"{name:22s} test R2 (yeo-johnson gross): {r2_score(test['gross_yj'], m.predict(test[cols])):.3f}")

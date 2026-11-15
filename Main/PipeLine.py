@@ -8,6 +8,7 @@ from sklearn.metrics import (accuracy_score, f1_score, matthews_corrcoef, mean_a
                              median_absolute_error, precision_score, r2_score, recall_score)
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import PowerTransformer
+from sklearn.inspection import permutation_importance
 
 #Intial Configuration
 FOLDS, SEED = 15, 42
@@ -49,9 +50,25 @@ for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
           "{:.3f}".format(np.mean(r2_train)) + " | validation " +
           "{:.3f}".format(np.mean(r2_val)) + " +/- " + "{:.3f}".format(np.std(r2_val)))
 
-    # final model on all of train -> test
-    pte = clone(model).fit(Xtr, ytr).predict(Xte)
+    final_model = clone(model).fit(Xtr, ytr)
+    pte = final_model.predict(Xte)
 
+    result = permutation_importance(
+        final_model, Xte, yte,
+        n_repeats=10,
+        random_state=SEED,
+        scoring="r2"
+    )
+
+    top_idx = np.argsort(result.importances_mean)[::-1][:30]
+    top_features = Xtr.columns.to_numpy()[top_idx]
+    top_weights = result.importances_mean[top_idx]
+
+    print("\n" + label + " top 30 features:")
+    print(pd.DataFrame({
+        "feature": top_features,
+        "importance": top_weights
+    }).to_string(index=False))
 
 #Defining maual classifier
     for name, X, y, b, p in [("CV", Xtr, ytr, btr, oof), ("TEST", Xte, yte, bte, pte)]:
@@ -100,3 +117,5 @@ for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
 
 print("\nSUMMARY")
 print(pd.DataFrame(summary).to_string(float_format=lambda v: "{:,.3f}".format(v)))
+
+

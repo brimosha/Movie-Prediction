@@ -1,13 +1,28 @@
+from collections import Counter
 import re
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold, train_test_split
-from sklearn.preprocessing import PowerTransformer, MultiLabelBinarizer
+from sklearn.preprocessing import PowerTransformer
 
 MIN_FILMS = 5 #an actor / director needs this many films in the training data to count as a "star"
 KW_MIN = 25  #a plot keyword needs this many films to get its own column
-FR_MIN = 3      # a franchise needs this many films to get its own column
+FR_MIN = 3  # a franchise needs this many films to get its own column
 SEED = 42
+
+
+def frequent_labels(rows, min_films):
+    counts = Counter(label for row in rows for label in set(row))
+    return sorted(label for label, count in counts.items() if count >= min_films)
+
+
+def multi_hot_frame(rows, labels, columns, index):
+    return pd.DataFrame(
+        {column: [int(label in row) for row in rows]
+         for label, column in zip(labels, columns)},
+        index=index,
+    )
+
 
 df = pd.read_csv("Clean.csv")
 
@@ -44,7 +59,7 @@ df["is_restricted"] = (df["rating_level"] >= 3).astype(int)
 df["content_rating"] = df["content_rating"].where(
     df["content_rating"].map(df["content_rating"].value_counts()) >= 30, "Other")
 
-# Plot keywords: multi-hot with MultiLabelBinarizer
+# Plot keywords: one column per keyword used in enough films
 def clean_kw(s):
     return re.sub(r"[^0-9a-z]+", "_", s.strip().lower()).strip("_")
 
@@ -52,9 +67,8 @@ kw_lists = (df["plot_keywords"].fillna("").astype(str)
             .map(lambda s: [clean_kw(k) for k in s.split("|") if k.strip() and k != "Unknown"]))
 df["num_keywords"] = kw_lists.map(len)
 
-mlb_kw = MultiLabelBinarizer()
-kw = pd.DataFrame(mlb_kw.fit_transform(kw_lists), columns="kw_" + pd.Index(mlb_kw.classes_), index=df.index)
-kw = kw.loc[:, kw.sum() >= KW_MIN]
+kw_classes = frequent_labels(kw_lists, KW_MIN)
+kw = multi_hot_frame(kw_lists, kw_classes, ["kw_" + label for label in kw_classes], df.index)
 print("keywords kept: {} (>= {} films)".format(kw.shape[1], KW_MIN))
 
 # broader themes caught by substring, so rare keywords still contribute
@@ -122,9 +136,8 @@ for t, af in zip(title, auto_franchise):
         labels.append("auto_" + re.sub(r"[^0-9a-z]+", "_", af).strip("_"))
     fr_lists.append(labels)
 
-mlb_fr = MultiLabelBinarizer()
-fr = pd.DataFrame(mlb_fr.fit_transform(fr_lists), columns="fr_" + pd.Index(mlb_fr.classes_), index=df.index)
-fr = fr.loc[:, fr.sum() >= FR_MIN]
+fr_classes = frequent_labels(fr_lists, FR_MIN)
+fr = multi_hot_frame(fr_lists, fr_classes, ["fr_" + label for label in fr_classes], df.index)
 print("franchise columns kept: {} (>= {} films)".format(fr.shape[1], FR_MIN))
 
 df["franchise_key"] = [l[0] if l else "" for l in fr_lists]
@@ -250,14 +263,10 @@ def director_lists(frame):
 
 def multi_hot(train, test, lists_fn, prefix, min_films):
     tr_l, te_l = lists_fn(train), lists_fn(test)
-    counts = pd.Series([n for l in tr_l for n in l]).value_counts()   # train counts only
-    keep = set(counts[counts >= min_films].index)
-    tr_l = tr_l.map(lambda l: [n for n in l if n in keep])
-    te_l = te_l.map(lambda l: [n for n in l if n in keep])
-    mlb = MultiLabelBinarizer(classes=sorted(keep))
-    cols = [prefix + re.sub(r"[^0-9a-z]+", "_", n.lower()).strip("_") for n in mlb.classes]
-    tr_m = pd.DataFrame(mlb.fit_transform(tr_l), columns=cols, index=train.index)
-    te_m = pd.DataFrame(mlb.transform(te_l), columns=cols, index=test.index)
+    classes = frequent_labels(tr_l, min_films)
+    cols = [prefix + re.sub(r"[^0-9a-z]+", "_", name.lower()).strip("_") for name in classes]
+    tr_m = multi_hot_frame(tr_l, classes, cols, train.index)
+    te_m = multi_hot_frame(te_l, classes, cols, test.index)
     print("{}: {} columns (>= {} films in train)".format(prefix, len(cols), min_films))
     return tr_m, te_m
 

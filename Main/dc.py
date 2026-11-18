@@ -147,8 +147,7 @@ for name, likes in [("director_name", "director_facebook_likes"),
     df.loc[df[name].eq("Unknown") & df[likes].isna(), likes] = 0
 
 
-for c in ["facenumber_in_poster",
-          "director_facebook_likes", "actor_1_facebook_likes",
+for c in ["director_facebook_likes", "actor_1_facebook_likes",
           "actor_2_facebook_likes", "actor_3_facebook_likes"]:
     df[c] = df[c].fillna(df[c].median())
 

@@ -77,7 +77,7 @@ for label, banned in [("PRE-RELEASE", POST_RELEASE), ("POST-RELEASE", [])]:
         err, ferr = p - y, rp - r
         out = (r < lo) | (r > hi) #true F-factor outside the train 5/95 band
         z, zp = yj.transform(y.reshape(-1, 1)).ravel(), yj.transform(p.reshape(-1, 1)).ravel()
-        th, ph = r > HIT, rp > HIT
+        th, ph = r >= HIT, rp >= HIT
 
         summary[(label, name)] = {
             "R2 gross ($)": r2_score(y, p),

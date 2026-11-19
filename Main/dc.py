@@ -93,9 +93,7 @@ df['plot_keywords'] = df['plot_keywords'].str.strip().str.title()
 
 
 
-# ==============================================================================
 # 3. NUMERICAL COLUMNS
-# ==============================================================================
 
 num_cols = df.select_dtypes(include='number').columns
 

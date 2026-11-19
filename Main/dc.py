@@ -74,7 +74,6 @@ for col in cat_cols:
 # old and tv labels folded into the modern ones, 
 # missing rating as Not Rated
 df["content_rating"] = df["content_rating"].replace({
-    "Not Rated": "Not Rated", "Unrated": "Unrated",
     "Approved": "PG", "Passed": "PG", "GP": "PG", "M": "PG",
     "X": "NC-17", "TV-MA": "R", "TV-14": "PG-13", "TV-PG": "PG",
     "TV-G": "G", "TV-Y": "G", "TV-Y7": "G"})

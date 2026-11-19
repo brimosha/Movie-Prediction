@@ -12,7 +12,7 @@ from sklearn.inspection import permutation_importance
 
 #Intial Configuration
 FOLDS, SEED = 15, 42
-HIT = 3.0
+HIT = 2.7
 POST_RELEASE = ["num_voted_users", "num_user_for_reviews", "num_critic_for_reviews",
                 "movie_facebook_likes", "has_movie_fb", "imdb_score"]   # only known after release (also catches log_* copies)
 

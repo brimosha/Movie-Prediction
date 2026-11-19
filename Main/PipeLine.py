@@ -12,7 +12,7 @@ from sklearn.inspection import permutation_importance
 
 #Intial Configuration
 FOLDS, SEED = 15, 42
-HIT = 2.7
+HIT = 2.65
 
 #Reading the data and coverting to numpy array
 tr, te = pd.read_csv("train_encoded.csv"), pd.read_csv("test_encoded.csv")
